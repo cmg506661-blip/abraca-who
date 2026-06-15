@@ -23,6 +23,13 @@
         #duel-btn { background: linear-gradient(135deg, #f12711 0%, #f5af19 100%); }
         #guess-btn { background: linear-gradient(135deg, #0575E6 0%, #021B79 100%); }
         #confirm-duel-btn, #confirm-guess-btn { background: linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%); }
+        
+        /* 🌟 추가: 방어 전용 UI 스타일 */
+        #defense-area { display: none; margin-top: 20px; padding: 20px; background: rgba(231, 76, 60, 0.2); border-radius: 15px; border: 2px dashed #e74c3c; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(231, 76, 60, 0); } 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); } }
+        #accept-duel-btn { background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); }
+        #defense-guess-btn { background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); }
+
         select, input { padding: 12px; font-size: 18px; margin: 5px; border-radius: 10px; border: 2px solid #fff; background: rgba(255, 255, 255, 0.9); font-family: 'Jua', sans-serif; color: #333; outline: none; }
         #game-area, #action-area, #duel-area, #guess-area { display: none; }
     </style>
@@ -52,12 +59,20 @@
 
         <div id="duel-area">
             <select id="target-player"></select>
-            <button id="confirm-duel-btn" class="btn">결투 실행!</button>
+            <button id="confirm-duel-btn" class="btn">결투 신청!</button>
         </div>
 
         <div id="guess-area">
             <input type="number" id="guess-input" min="1" max="6" placeholder="1~6">
             <button id="confirm-guess-btn" class="btn">정답 확인!</button>
+        </div>
+
+        <div id="defense-area">
+            <h3 style="color: #ff7675; margin-top: 0;">⚠️ 결투 신청을 받았습니다! 어떻게 대응하시겠습니까?</h3>
+            <button id="accept-duel-btn" class="btn">⚔️ 결투 수락</button>
+            <br><br>
+            <input type="number" id="defense-guess-input" min="1" max="6" placeholder="1~6">
+            <button id="defense-guess-btn" class="btn">🤔 추리로 반격</button>
         </div>
 
         <br>
@@ -89,7 +104,9 @@
             let myId = socket.id;
             let players = data.players;
             let currentTurnPlayer = players[data.turnIndex];
-            let isMyTurn = (currentTurnPlayer.id === myId) && !data.isOver;
+            
+            // 대기 상태(pendingAttack)가 없을 때만 내 턴 메뉴를 보여줍니다.
+            let isMyTurn = (currentTurnPlayer.id === myId) && !data.isOver && !data.pendingAttack;
 
             let myData = players.find(p => p.id === myId);
 
@@ -101,7 +118,8 @@
             } else {
                 document.getElementById('my-board').style.display = "none";
             }
-            if (isMyTurn) document.getElementById('my-board').classList.add('active-turn');
+            
+            if (isMyTurn || data.pendingAttack === myId) document.getElementById('my-board').classList.add('active-turn');
             else document.getElementById('my-board').classList.remove('active-turn');
 
             const opponentsArea = document.getElementById('opponents-area');
@@ -113,6 +131,9 @@
                 if (p.id !== myId && p.hp > 0) {
                     let oppDiv = document.createElement('div');
                     oppDiv.className = `opponent-board ${currentTurnPlayer.id === p.id && !data.isOver ? 'active-turn' : ''}`;
+                    // 공격받고 있는 사람 강조
+                    if (data.pendingAttack === p.id) oppDiv.style.border = "3px dashed #e74c3c";
+                    
                     oppDiv.innerHTML = `
                         <div style="margin-bottom: 5px;"><b>${p.name}</b></div>
                         <span class="hp-text">❤️ ${p.hp}</span> | <span class="stone-text">💎 ${p.stone}</span><br>
@@ -127,11 +148,20 @@
                 }
             });
 
-            document.getElementById('action-area').style.display = isMyTurn ? "block" : "none";
+            // 🌟 결투 신청을 받은 타겟이라면 방어 메뉴 노출
+            if (data.pendingAttack === myId) {
+                document.getElementById('action-area').style.display = "none";
+                document.getElementById('defense-area').style.display = "block";
+            } else {
+                document.getElementById('defense-area').style.display = "none";
+                document.getElementById('action-area').style.display = isMyTurn ? "block" : "none";
+            }
+            
             document.getElementById('duel-area').style.display = "none";
             document.getElementById('guess-area').style.display = "none";
         });
 
+        // 공격자 액션
         document.getElementById('duel-btn').addEventListener('click', () => {
             document.getElementById('action-area').style.display = "none"; 
             document.getElementById('duel-area').style.display = "block";
@@ -140,17 +170,27 @@
             document.getElementById('action-area').style.display = "none"; 
             document.getElementById('guess-area').style.display = "block";
         });
-
+        
         document.getElementById('confirm-duel-btn').addEventListener('click', () => {
             let targetId = document.getElementById('target-player').value;
             if(!targetId) return alert("결투할 상대가 없습니다.");
-            socket.emit('actionDuel', targetId);
+            socket.emit('actionDuelRequest', targetId); // 서버로 신청 이벤트 전송
         });
-
         document.getElementById('confirm-guess-btn').addEventListener('click', () => {
             let guess = parseInt(document.getElementById('guess-input').value);
             if(!guess) return alert("숫자를 입력하세요.");
             socket.emit('actionGuess', guess);
+        });
+
+        // 🌟 방어자 액션 (결투 수락 / 반격)
+        document.getElementById('accept-duel-btn').addEventListener('click', () => {
+            socket.emit('respondToAttack', { type: 'duel' });
+        });
+        
+        document.getElementById('defense-guess-btn').addEventListener('click', () => {
+            let guess = parseInt(document.getElementById('defense-guess-input').value);
+            if(!guess) return alert("반격할 숫자를 입력하세요.");
+            socket.emit('respondToAttack', { type: 'guess', guessNum: guess });
         });
     </script>
 </body>

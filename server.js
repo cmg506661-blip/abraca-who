@@ -7,6 +7,7 @@ app.use(express.static(__dirname));
 
 let players = [];
 let deck = [];
+let discardPile = []; 
 let turnIndex = 0;
 let gameStarted = false;
 let pendingAttack = null;
@@ -19,10 +20,32 @@ const cardNames = {
 function initDeck() {
     deck = [6, 5,5, 4,4,4, 3,3,3,3, 2,2,2,2,2, 1,1,1,1,1,1];
     deck.sort(() => Math.random() - 0.5);
+    discardPile = [];
+}
+
+function discardCard(cardNum) {
+    if (cardNum === 0) return;
+    
+    if (cardNum === 6) {
+        deck.push(6); 
+        deck.sort(() => Math.random() - 0.5); 
+        io.emit('gameLog', "👻 고스트가 모습을 드러낸 후 다시 어둠 속(더미)으로 숨어들었습니다!");
+    } else {
+        discardPile.push(cardNum); 
+    }
 }
 
 function drawCard() {
-    if (deck.length === 0) initDeck();
+    if (deck.length === 0) {
+        if (discardPile.length > 0) {
+            deck = [...discardPile];
+            discardPile = [];
+            deck.sort(() => Math.random() - 0.5);
+            io.emit('gameLog', "🔄 카드 더미가 다 떨어져, 사용된 카드를 다시 섞습니다.");
+        } else {
+            initDeck(); 
+        }
+    }
     return deck.shift();
 }
 
@@ -52,6 +75,15 @@ function checkGameState(msg) {
     }
 
     return { msg, isOver };
+}
+
+function cleanUpDeadPlayers() {
+    players.forEach(p => {
+        if (p.hp <= 0 && p.card !== 0) {
+            discardCard(p.card);
+            p.card = 0;
+        }
+    });
 }
 
 io.on('connection', (socket) => {
@@ -86,7 +118,7 @@ io.on('connection', (socket) => {
             p.stone = 0;
             p.card = drawCard();
         });
-        io.emit('gameState', { players, turnIndex, log: "🚀 게임이 시작되었습니다! 마법사들의 대결이 펼쳐집니다." });
+        io.emit('gameState', { players, turnIndex, log: "🚀 게임이 시작되었습니다! 마법사들의 대결이 펼쳐집니다.", isOver: false, pendingAttack: null, discardPile });
     });
 
     socket.on('actionDuelRequest', (targetId) => {
@@ -100,7 +132,8 @@ io.on('connection', (socket) => {
             turnIndex, 
             log: `⚔️ <b>[${me.name}]</b>님이 <b>[${target.name}]</b>님에게 결투를 신청했습니다!\n방어자의 응답을 기다리는 중...`, 
             isOver: false,
-            pendingAttack: pendingAttack.defender.id 
+            pendingAttack: pendingAttack.defender.id,
+            discardPile
         });
     });
 
@@ -117,21 +150,28 @@ io.on('connection', (socket) => {
             msg = `⚔️ <b>[${defender.name}]</b>님이 결투를 수락했습니다!\n공격(${cardNames[aNum]}) VS 수비(${cardNames[dNum]})\n\n`;
 
             if (aNum === 1 && dNum === 6) {
-                msg += "🎉 🧹청소부가 👻고스트를 잡았습니다!"; defender.hp--; attacker.stone++;
+                msg += "🎉 🧹청소부가 👻고스트를 잡았습니다! 방어자 체력 -1"; defender.hp--; attacker.stone++;
             } else if (aNum === 6 && dNum === 1) {
-                msg += "💀 👻고스트가 🧹청소부에게 쫓겨납니다."; attacker.hp--; defender.stone++;
+                msg += "💀 👻고스트가 🧹청소부에게 쫓겨납니다. 공격자 체력 -1"; attacker.hp--; defender.stone++;
             } else if (aNum === 2 && dNum === 5) {
-                msg += "🎉 🍳요리사가 🧛뱀파이어를 이겼습니다!"; defender.hp--; attacker.stone++;
+                msg += "🎉 🍳요리사가 🧛뱀파이어를 이겼습니다! 방어자 체력 -1"; defender.hp--; attacker.stone++;
             } else if (aNum === 5 && dNum === 2) {
-                msg += "💀 🧛뱀파이어가 🍳요리사에게 당했습니다."; attacker.hp--; defender.stone++;
+                msg += "💀 🧛뱀파이어가 🍳요리사에게 당했습니다. 공격자 체력 -1"; attacker.hp--; defender.stone++;
             } else if (aNum > dNum) {
-                msg += `🎉 공격 성공! 방어자의 체력이 1 깎입니다.`; defender.hp--;
+                // 🌟 숫자 차이만큼 데미지 계산 (공격 성공)
+                let damage = aNum - dNum;
+                msg += `🎉 공격 성공! 파워 차이만큼 방어자의 체력이 ${damage} 깎입니다.`; 
+                defender.hp -= damage;
             } else if (aNum < dNum) {
-                msg += `💀 공격 실패... 역공을 당해 공격자의 체력이 1 깎입니다.`; attacker.hp--;
+                // 🌟 숫자 차이만큼 데미지 계산 (공격 실패 및 역공)
+                let damage = dNum - aNum;
+                msg += `💀 공격 실패... 파워 차이만큼 역공을 당해 공격자의 체력이 ${damage} 깎입니다.`; 
+                attacker.hp -= damage;
             } else {
                 msg += "🤝 챙챙! 힘이 같아 아무 일도 일어나지 않습니다.";
             }
 
+            discardCard(attacker.card); 
             attacker.card = drawCard(); 
         } else if (data.type === 'guess') {
             let pNum = defender.card;
@@ -146,15 +186,24 @@ io.on('connection', (socket) => {
                     case 4: msg += "⚔️갑옷기사: 나머지 전원에게 2 피해!"; players.forEach(p => { if (p.id !== defender.id && p.hp > 0) p.hp -= 2; }); break;
                     case 3: msg += "🎩집사: 자신 체력 1 회복, 나머지 전원 1 피해!"; defender.hp++; players.forEach(p => { if (p.id !== defender.id && p.hp > 0) p.hp -= 1; }); break;
                     case 2: msg += "🍳요리사: 신비한 돌 +1개 획득!"; defender.stone++; break;
-                    case 1: msg += `🧹청소부: 카드 더미 훔쳐보기를 사용했습니다.`; break; 
+                    case 1: 
+                        if (deck.length > 0) {
+                            let peekCard = deck.shift();
+                            deck.push(peekCard);
+                            msg += `🧹청소부: 카드 더미 맨 위를 몰래 확인하고 맨 아래로 숨겼습니다.`; 
+                            io.to(socket.id).emit('privateLog', `🤫 <b>[비밀 정보]</b><br>덱 맨 위에서 확인한 카드는 <b>[${cardNames[peekCard]}]</b> 였으며, 맨 아래로 보냈습니다!`);
+                        }
+                        break; 
                 }
             } else {
                 msg += `💀 펑! 추리 실패...\n진짜 카드는 <b>[${cardNames[pNum]}]</b>였습니다. 페널티로 방어자의 체력이 1 깎입니다.`;
                 defender.hp--;
             }
+            discardCard(defender.card); 
             defender.card = drawCard(); 
         }
 
+        cleanUpDeadPlayers();
         pendingAttack = null; 
         let state = checkGameState(msg);
         
@@ -172,7 +221,7 @@ io.on('connection', (socket) => {
             nextTurn();
         }
         
-        io.emit('gameState', { players, turnIndex, log: state.msg, isOver: state.isOver });
+        io.emit('gameState', { players, turnIndex, log: state.msg, isOver: state.isOver, pendingAttack: null, discardPile });
     });
 
     socket.on('actionGuess', (guessedNumber) => {
@@ -188,15 +237,24 @@ io.on('connection', (socket) => {
                 case 4: msg += "⚔️갑옷기사: 나머지 전원에게 2 피해!"; players.forEach(p => { if (p.id !== me.id && p.hp > 0) p.hp -= 2; }); break;
                 case 3: msg += "🎩집사: 자신 체력 1 회복, 나머지 전원 1 피해!"; me.hp++; players.forEach(p => { if (p.id !== me.id && p.hp > 0) p.hp -= 1; }); break;
                 case 2: msg += "🍳요리사: 신비한 돌 +1개 획득!"; me.stone++; break;
-                case 1: msg += `🧹청소부: 카드 더미 훔쳐보기를 사용했습니다.`; break; 
+                case 1: 
+                    if (deck.length > 0) {
+                        let peekCard = deck.shift();
+                        deck.push(peekCard);
+                        msg += `🧹청소부: 카드 더미 맨 위를 몰래 확인하고 맨 아래로 숨겼습니다.`; 
+                        io.to(socket.id).emit('privateLog', `🤫 <b>[비밀 정보]</b><br>덱 맨 위에서 확인한 카드는 <b>[${cardNames[peekCard]}]</b> 였으며, 맨 아래로 보냈습니다!`);
+                    }
+                    break; 
             }
         } else {
             msg += `💀 펑! 추리 실패...\n진짜 카드는 <b>[${cardNames[pNum]}]</b>였습니다. 페널티로 체력이 1 깎입니다.`;
             me.hp--;
         }
 
+        discardCard(me.card); 
         me.card = drawCard(); 
-
+        
+        cleanUpDeadPlayers();
         let state = checkGameState(msg);
         
         if (state.isOver) {
@@ -213,7 +271,7 @@ io.on('connection', (socket) => {
             nextTurn();
         }
         
-        io.emit('gameState', { players, turnIndex, log: state.msg, isOver: state.isOver });
+        io.emit('gameState', { players, turnIndex, log: state.msg, isOver: state.isOver, pendingAttack: null, discardPile });
     });
 
     socket.on('disconnect', () => {
@@ -222,7 +280,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// 🌟 Render 같은 외부 호스팅 환경에 안전하게 접속하기 위해 '0.0.0.0' 옵션 추가
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, '0.0.0.0', () => {
     console.log(`✨ 서버가 ${PORT}번 포트에서 열렸습니다!`);

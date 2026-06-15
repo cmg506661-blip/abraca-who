@@ -104,17 +104,14 @@
             let nickname = document.getElementById('nickname-input').value.trim();
             if (!nickname) return alert("닉네임을 입력해주세요!");
             
-            // 🌟 수정: 버튼을 눌러도 화면을 바로 숨기지 않고 서버로 이름만 보냅니다.
             socket.emit('joinGame', nickname); 
         });
 
-        // 🌟 추가: 서버가 입장을 허락했을 때만 화면 이동
         socket.on('joinSuccess', () => {
             hasJoined = true;
             document.getElementById('login-area').style.display = "none";
         });
 
-        // 🌟 추가: 서버가 입장을 거절했을 때 (게임 중 새로고침 등)
         socket.on('joinFail', (msg) => {
             alert(msg);
         });

@@ -57,7 +57,6 @@ function checkGameState(msg) {
 io.on('connection', (socket) => {
 
     socket.on('joinGame', (nickname) => {
-        // 🌟 수정: 게임 중이거나 5초 대기 중일 때 확실하게 거절 메시지 전송
         if (gameStarted) {
             socket.emit('joinFail', "현재 게임이 진행 중이거나 결과 정리 중입니다.\n잠시 후 다시 시도해주세요!");
             return;
@@ -72,7 +71,6 @@ io.on('connection', (socket) => {
         };
         players.push(newPlayer);
         
-        // 🌟 수정: 서버가 정상적으로 등록했음을 클라이언트에 알림
         socket.emit('joinSuccess');
         io.emit('lobbyUpdate', players);
     });
@@ -80,8 +78,8 @@ io.on('connection', (socket) => {
     socket.on('startGame', () => {
         if (players.length < 2) return;
         gameStarted = true;
-        turnIndex = 0; // 🌟 새로 시작할 때 턴 초기화
-        pendingAttack = null; // 🌟 대기 상태 초기화
+        turnIndex = 0; 
+        pendingAttack = null; 
         initDeck();
         players.forEach(p => {
             p.hp = 5;
@@ -224,7 +222,8 @@ io.on('connection', (socket) => {
     });
 });
 
+// 🌟 Render 같은 외부 호스팅 환경에 안전하게 접속하기 위해 '0.0.0.0' 옵션 추가
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
+http.listen(PORT, '0.0.0.0', () => {
     console.log(`✨ 서버가 ${PORT}번 포트에서 열렸습니다!`);
 });

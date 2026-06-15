@@ -149,21 +149,20 @@ io.on('connection', (socket) => {
             let dNum = defender.card;
             msg = `⚔️ <b>[${defender.name}]</b>님이 결투를 수락했습니다!\n공격(${cardNames[aNum]}) VS 수비(${cardNames[dNum]})\n\n`;
 
+            // 🌟 수정된 로직: 고스트(6)와 뱀파이어(5)는 상성 패배 시 즉시 탈락(HP = 0)
             if (aNum === 1 && dNum === 6) {
-                msg += "🎉 🧹청소부가 👻고스트를 잡았습니다! 방어자 체력 -1"; defender.hp--; attacker.stone++;
+                msg += "🎉 🧹청소부가 👻고스트를 퇴치했습니다! 방어자(고스트) 즉시 탈락!"; defender.hp = 0; attacker.stone++;
             } else if (aNum === 6 && dNum === 1) {
-                msg += "💀 👻고스트가 🧹청소부에게 쫓겨납니다. 공격자 체력 -1"; attacker.hp--; defender.stone++;
+                msg += "💀 👻고스트가 🧹청소부에게 쫓겨납니다. 공격자(고스트) 즉시 탈락!"; attacker.hp = 0; defender.stone++;
             } else if (aNum === 2 && dNum === 5) {
-                msg += "🎉 🍳요리사가 🧛뱀파이어를 이겼습니다! 방어자 체력 -1"; defender.hp--; attacker.stone++;
+                msg += "🎉 🍳요리사가 🧛뱀파이어를 물리쳤습니다! 방어자(뱀파이어) 즉시 탈락!"; defender.hp = 0; attacker.stone++;
             } else if (aNum === 5 && dNum === 2) {
-                msg += "💀 🧛뱀파이어가 🍳요리사에게 당했습니다. 공격자 체력 -1"; attacker.hp--; defender.stone++;
+                msg += "💀 🧛뱀파이어가 🍳요리사에게 당했습니다. 공격자(뱀파이어) 즉시 탈락!"; attacker.hp = 0; defender.stone++;
             } else if (aNum > dNum) {
-                // 🌟 숫자 차이만큼 데미지 계산 (공격 성공)
                 let damage = aNum - dNum;
                 msg += `🎉 공격 성공! 파워 차이만큼 방어자의 체력이 ${damage} 깎입니다.`; 
                 defender.hp -= damage;
             } else if (aNum < dNum) {
-                // 🌟 숫자 차이만큼 데미지 계산 (공격 실패 및 역공)
                 let damage = dNum - aNum;
                 msg += `💀 공격 실패... 파워 차이만큼 역공을 당해 공격자의 체력이 ${damage} 깎입니다.`; 
                 attacker.hp -= damage;

@@ -24,19 +24,31 @@
         #guess-btn { background: linear-gradient(135deg, #0575E6 0%, #021B79 100%); }
         #confirm-duel-btn, #confirm-guess-btn { background: linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%); }
         
-        /* 🌟 추가: 방어 전용 UI 스타일 */
         #defense-area { display: none; margin-top: 20px; padding: 20px; background: rgba(231, 76, 60, 0.2); border-radius: 15px; border: 2px dashed #e74c3c; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(231, 76, 60, 0); } 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); } }
         #accept-duel-btn { background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); }
         #defense-guess-btn { background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); }
 
         select, input { padding: 12px; font-size: 18px; margin: 5px; border-radius: 10px; border: 2px solid #fff; background: rgba(255, 255, 255, 0.9); font-family: 'Jua', sans-serif; color: #333; outline: none; }
-        #game-area, #action-area, #duel-area, #guess-area { display: none; }
+        
+        /* 🌟 새로 추가된 로그인 화면 스타일 */
+        #login-area { display: block; margin-top: 100px; }
+        #join-btn { background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%); font-size: 20px; }
+        #nickname-input { width: 200px; text-align: center; font-size: 20px; padding: 15px; margin-bottom: 20px; }
+
+        #lobby-area, #game-area, #action-area, #duel-area, #guess-area { display: none; }
     </style>
 </head>
 <body>
 
     <h1>✨ 아브라카 후 온라인 ✨</h1>
+
+    <div id="login-area">
+        <h2>당신의 마법사 이름을 알려주세요!</h2>
+        <input type="text" id="nickname-input" placeholder="닉네임 (예: 간달프)" maxlength="10">
+        <br>
+        <button id="join-btn" class="btn">대기실 입장하기</button>
+    </div>
 
     <div id="lobby-area">
         <h2>대기실 <span id="player-count">(0명 접속)</span></h2>
@@ -82,13 +94,35 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        let hasJoined = false; // 🌟 현재 내가 게임에 입장했는지 여부 저장
 
         const cardNames = {
             6: '👻고스트(6)', 5: '🧛뱀파이어(5)', 4: '⚔️갑옷기사(4)', 
             3: '🎩집사(3)', 2: '🍳요리사(2)', 1: '🧹청소부(1)'
         };
 
+        // 🌟 입장 버튼 클릭 이벤트
+        document.getElementById('join-btn').addEventListener('click', () => {
+            let nickname = document.getElementById('nickname-input').value.trim();
+            if (!nickname) return alert("닉네임을 입력해주세요!");
+            
+            hasJoined = true; // 입장 상태로 변경
+            document.getElementById('login-area').style.display = "none";
+            socket.emit('joinGame', nickname); // 서버로 닉네임 전송
+        });
+
+        // 서버 오류 알림 (이미 게임 중일 때 등)
+        socket.on('gameLog', (msg) => {
+            alert(msg);
+            if (!hasJoined) {
+                document.getElementById('login-area').style.display = "block";
+            }
+        });
+
         socket.on('lobbyUpdate', (players) => {
+            if (!hasJoined) return; // 🌟 아직 닉네임을 입력하지 않았다면 로비 화면을 무시함
+            document.getElementById('lobby-area').style.display = "block";
+            document.getElementById('game-area').style.display = "none";
             document.getElementById('player-count').innerText = `(${players.length}명 접속)`;
             document.getElementById('lobby-players').innerHTML = players.map(p => `🧙‍♂️ ${p.name} (대기중)`).join('<br>');
         });
@@ -98,6 +132,8 @@
         });
 
         socket.on('gameState', (data) => {
+            if (!hasJoined) return; // 미접속자 방지
+
             document.getElementById('lobby-area').style.display = "none";
             document.getElementById('game-area').style.display = "block";
             
@@ -105,14 +141,13 @@
             let players = data.players;
             let currentTurnPlayer = players[data.turnIndex];
             
-            // 대기 상태(pendingAttack)가 없을 때만 내 턴 메뉴를 보여줍니다.
             let isMyTurn = (currentTurnPlayer.id === myId) && !data.isOver && !data.pendingAttack;
 
             let myData = players.find(p => p.id === myId);
 
             document.getElementById('result-text').innerHTML = data.log.replace(/\n/g, '<br>');
 
-            if (myData.hp > 0) {
+            if (myData && myData.hp > 0) {
                 document.getElementById('my-board').style.display = "block";
                 document.getElementById('my-title').innerHTML = `${myData.name} <span class="hp-text">❤️ ${myData.hp}</span> <span class="stone-text">💎 ${myData.stone}</span>`;
             } else {
@@ -131,7 +166,6 @@
                 if (p.id !== myId && p.hp > 0) {
                     let oppDiv = document.createElement('div');
                     oppDiv.className = `opponent-board ${currentTurnPlayer.id === p.id && !data.isOver ? 'active-turn' : ''}`;
-                    // 공격받고 있는 사람 강조
                     if (data.pendingAttack === p.id) oppDiv.style.border = "3px dashed #e74c3c";
                     
                     oppDiv.innerHTML = `
@@ -148,8 +182,7 @@
                 }
             });
 
-            // 🌟 결투 신청을 받은 타겟이라면 방어 메뉴 노출
-            if (data.pendingAttack === myId) {
+            if (data.pendingAttack === myId && !data.isOver) {
                 document.getElementById('action-area').style.display = "none";
                 document.getElementById('defense-area').style.display = "block";
             } else {
@@ -161,7 +194,6 @@
             document.getElementById('guess-area').style.display = "none";
         });
 
-        // 공격자 액션
         document.getElementById('duel-btn').addEventListener('click', () => {
             document.getElementById('action-area').style.display = "none"; 
             document.getElementById('duel-area').style.display = "block";
@@ -174,7 +206,7 @@
         document.getElementById('confirm-duel-btn').addEventListener('click', () => {
             let targetId = document.getElementById('target-player').value;
             if(!targetId) return alert("결투할 상대가 없습니다.");
-            socket.emit('actionDuelRequest', targetId); // 서버로 신청 이벤트 전송
+            socket.emit('actionDuelRequest', targetId); 
         });
         document.getElementById('confirm-guess-btn').addEventListener('click', () => {
             let guess = parseInt(document.getElementById('guess-input').value);
@@ -182,7 +214,6 @@
             socket.emit('actionGuess', guess);
         });
 
-        // 🌟 방어자 액션 (결투 수락 / 반격)
         document.getElementById('accept-duel-btn').addEventListener('click', () => {
             socket.emit('respondToAttack', { type: 'duel' });
         });

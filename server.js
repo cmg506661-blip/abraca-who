@@ -9,7 +9,7 @@ let players = [];
 let deck = [];
 let turnIndex = 0;
 let gameStarted = false;
-let pendingAttack = null; // 🌟 결투 대기 상태를 저장하는 변수
+let pendingAttack = null;
 
 const cardNames = {
     6: '👻고스트(6)', 5: '🧛뱀파이어(5)', 4: '⚔️갑옷기사(4)', 
@@ -55,19 +55,27 @@ function checkGameState(msg) {
 }
 
 io.on('connection', (socket) => {
-    if (gameStarted) {
-        socket.emit('gameLog', "이미 게임이 시작되었습니다.");
-        return socket.disconnect();
-    }
+    // 접속 시 바로 플레이어로 등록하지 않고 대기합니다.
 
-    let newPlayer = {
-        id: socket.id,
-        name: `마법사 ${players.length + 1}`,
-        hp: 5, stone: 0, card: 0
-    };
-    players.push(newPlayer);
-    
-    io.emit('lobbyUpdate', players);
+    // 🌟 플레이어가 닉네임을 입력하고 입장 버튼을 눌렀을 때 실행됨
+    socket.on('joinGame', (nickname) => {
+        if (gameStarted) {
+            socket.emit('gameLog', "이미 게임이 시작되어 입장할 수 없습니다.");
+            return;
+        }
+
+        // 입력한 닉네임이 없으면 '마법사 X'로 기본 설정
+        let finalName = nickname || `마법사 ${players.length + 1}`;
+
+        let newPlayer = {
+            id: socket.id,
+            name: finalName,
+            hp: 5, stone: 0, card: 0
+        };
+        players.push(newPlayer);
+        
+        io.emit('lobbyUpdate', players);
+    });
 
     socket.on('startGame', () => {
         if (players.length < 2) return;
@@ -77,7 +85,6 @@ io.on('connection', (socket) => {
         io.emit('gameState', { players, turnIndex, log: "🚀 게임이 시작되었습니다! 마법사들의 대결이 펼쳐집니다." });
     });
 
-    // 🌟 수정: 결투를 '신청'만 하고 방어자의 응답을 기다립니다.
     socket.on('actionDuelRequest', (targetId) => {
         let me = players.find(p => p.id === socket.id);
         let target = players.find(p => p.id === targetId);
@@ -89,11 +96,10 @@ io.on('connection', (socket) => {
             turnIndex, 
             log: `⚔️ <b>[${me.name}]</b>님이 <b>[${target.name}]</b>님에게 결투를 신청했습니다!\n방어자의 응답을 기다리는 중...`, 
             isOver: false,
-            pendingAttack: pendingAttack.defender.id // 누가 공격받고 있는지 클라이언트에 알림
+            pendingAttack: pendingAttack.defender.id 
         });
     });
 
-    // 🌟 추가: 방어자가 수락(duel) 혹은 반격(guess)을 선택했을 때 처리
     socket.on('respondToAttack', (data) => {
         if (!pendingAttack || pendingAttack.defender.id !== socket.id) return;
 
@@ -102,7 +108,6 @@ io.on('connection', (socket) => {
         let msg = "";
 
         if (data.type === 'duel') {
-            // 방어자가 결투를 수락한 경우
             let aNum = attacker.card;
             let dNum = defender.card;
             msg = `⚔️ <b>[${defender.name}]</b>님이 결투를 수락했습니다!\n공격(${cardNames[aNum]}) VS 수비(${cardNames[dNum]})\n\n`;
@@ -123,9 +128,8 @@ io.on('connection', (socket) => {
                 msg += "🤝 챙챙! 힘이 같아 아무 일도 일어나지 않습니다.";
             }
 
-            attacker.card = drawCard(); // 공격자 카드 교체
+            attacker.card = drawCard(); 
         } else if (data.type === 'guess') {
-            // 방어자가 추리로 반격한 경우
             let pNum = defender.card;
             let guessedNumber = data.guessNum;
             msg = `🤔 <b>[${defender.name}]</b>님이 결투를 피하고 정체 추리로 반격합니다!\n"내 카드는 분명 [${guessedNumber}]일 것이다!"\n\n`;
@@ -144,23 +148,36 @@ io.on('connection', (socket) => {
                 msg += `💀 펑! 추리 실패...\n진짜 카드는 <b>[${cardNames[pNum]}]</b>였습니다. 페널티로 방어자의 체력이 1 깎입니다.`;
                 defender.hp--;
             }
-            defender.card = drawCard(); // 방어자 카드 교체
+            defender.card = drawCard(); 
         }
 
-        pendingAttack = null; // 대기 상태 해제
+        pendingAttack = null; 
         let state = checkGameState(msg);
-        if (!state.isOver) nextTurn();
+        
+        if (state.isOver) {
+            setTimeout(() => {
+                gameStarted = false;
+                players.forEach(p => {
+                    p.hp = 5;
+                    p.stone = 0;
+                    p.card = 0;
+                });
+                io.emit('lobbyUpdate', players);
+            }, 5000);
+        } else {
+            nextTurn();
+        }
+        
         io.emit('gameState', { players, turnIndex, log: state.msg, isOver: state.isOver });
     });
 
-    // 일반 내 턴일 때의 추리
     socket.on('actionGuess', (guessedNumber) => {
         let me = players.find(p => p.id === socket.id);
         let pNum = me.card;
         let msg = `🤔 <b>[${me.name}]</b>의 추리:\n"내 카드는 분명 [${guessedNumber}]일 것이다!"\n\n`;
 
         if (guessedNumber === pNum) {
-            msg += `🎉 추리 성공! 진짜 카드는 <b>[${cardNames[pNum]}]</b>였습니다!\n✨ <b>[강력한 마법 효과 발동]</b> ✨\n`;
+            msg += `🎉 추리 성공! 진짜 카드는 <b>[${cardNames[pNum]}]</b>였습니다!\n✨ <b>[강력 마법 효과 발동]</b> ✨\n`;
             switch(pNum) {
                 case 6: msg += "👻고스트: 나머지 전원 즉시 탈락!"; players.forEach(p => { if (p.id !== me.id) p.hp = 0; }); break;
                 case 5: msg += "🧛뱀파이어: 신비한 돌 +2개 획득!"; me.stone += 2; break;
@@ -177,7 +194,21 @@ io.on('connection', (socket) => {
         me.card = drawCard(); 
 
         let state = checkGameState(msg);
-        if (!state.isOver) nextTurn();
+        
+        if (state.isOver) {
+            setTimeout(() => {
+                gameStarted = false;
+                players.forEach(p => {
+                    p.hp = 5;
+                    p.stone = 0;
+                    p.card = 0;
+                });
+                io.emit('lobbyUpdate', players);
+            }, 5000);
+        } else {
+            nextTurn();
+        }
+        
         io.emit('gameState', { players, turnIndex, log: state.msg, isOver: state.isOver });
     });
 

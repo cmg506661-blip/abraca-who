@@ -31,7 +31,6 @@
 
         select, input { padding: 12px; font-size: 18px; margin: 5px; border-radius: 10px; border: 2px solid #fff; background: rgba(255, 255, 255, 0.9); font-family: 'Jua', sans-serif; color: #333; outline: none; }
         
-        /* 🌟 새로 추가된 로그인 화면 스타일 */
         #login-area { display: block; margin-top: 100px; }
         #join-btn { background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%); font-size: 20px; }
         #nickname-input { width: 200px; text-align: center; font-size: 20px; padding: 15px; margin-bottom: 20px; }
@@ -94,33 +93,34 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        let hasJoined = false; // 🌟 현재 내가 게임에 입장했는지 여부 저장
+        let hasJoined = false; 
 
         const cardNames = {
             6: '👻고스트(6)', 5: '🧛뱀파이어(5)', 4: '⚔️갑옷기사(4)', 
             3: '🎩집사(3)', 2: '🍳요리사(2)', 1: '🧹청소부(1)'
         };
 
-        // 🌟 입장 버튼 클릭 이벤트
         document.getElementById('join-btn').addEventListener('click', () => {
             let nickname = document.getElementById('nickname-input').value.trim();
             if (!nickname) return alert("닉네임을 입력해주세요!");
             
-            hasJoined = true; // 입장 상태로 변경
-            document.getElementById('login-area').style.display = "none";
-            socket.emit('joinGame', nickname); // 서버로 닉네임 전송
+            // 🌟 수정: 버튼을 눌러도 화면을 바로 숨기지 않고 서버로 이름만 보냅니다.
+            socket.emit('joinGame', nickname); 
         });
 
-        // 서버 오류 알림 (이미 게임 중일 때 등)
-        socket.on('gameLog', (msg) => {
+        // 🌟 추가: 서버가 입장을 허락했을 때만 화면 이동
+        socket.on('joinSuccess', () => {
+            hasJoined = true;
+            document.getElementById('login-area').style.display = "none";
+        });
+
+        // 🌟 추가: 서버가 입장을 거절했을 때 (게임 중 새로고침 등)
+        socket.on('joinFail', (msg) => {
             alert(msg);
-            if (!hasJoined) {
-                document.getElementById('login-area').style.display = "block";
-            }
         });
 
         socket.on('lobbyUpdate', (players) => {
-            if (!hasJoined) return; // 🌟 아직 닉네임을 입력하지 않았다면 로비 화면을 무시함
+            if (!hasJoined) return; 
             document.getElementById('lobby-area').style.display = "block";
             document.getElementById('game-area').style.display = "none";
             document.getElementById('player-count').innerText = `(${players.length}명 접속)`;
@@ -132,7 +132,7 @@
         });
 
         socket.on('gameState', (data) => {
-            if (!hasJoined) return; // 미접속자 방지
+            if (!hasJoined) return; 
 
             document.getElementById('lobby-area').style.display = "none";
             document.getElementById('game-area').style.display = "block";

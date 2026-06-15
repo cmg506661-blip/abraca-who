@@ -55,16 +55,14 @@ function checkGameState(msg) {
 }
 
 io.on('connection', (socket) => {
-    // 접속 시 바로 플레이어로 등록하지 않고 대기합니다.
 
-    // 🌟 플레이어가 닉네임을 입력하고 입장 버튼을 눌렀을 때 실행됨
     socket.on('joinGame', (nickname) => {
+        // 🌟 수정: 게임 중이거나 5초 대기 중일 때 확실하게 거절 메시지 전송
         if (gameStarted) {
-            socket.emit('gameLog', "이미 게임이 시작되어 입장할 수 없습니다.");
+            socket.emit('joinFail', "현재 게임이 진행 중이거나 결과 정리 중입니다.\n잠시 후 다시 시도해주세요!");
             return;
         }
 
-        // 입력한 닉네임이 없으면 '마법사 X'로 기본 설정
         let finalName = nickname || `마법사 ${players.length + 1}`;
 
         let newPlayer = {
@@ -74,14 +72,22 @@ io.on('connection', (socket) => {
         };
         players.push(newPlayer);
         
+        // 🌟 수정: 서버가 정상적으로 등록했음을 클라이언트에 알림
+        socket.emit('joinSuccess');
         io.emit('lobbyUpdate', players);
     });
 
     socket.on('startGame', () => {
         if (players.length < 2) return;
         gameStarted = true;
+        turnIndex = 0; // 🌟 새로 시작할 때 턴 초기화
+        pendingAttack = null; // 🌟 대기 상태 초기화
         initDeck();
-        players.forEach(p => p.card = drawCard());
+        players.forEach(p => {
+            p.hp = 5;
+            p.stone = 0;
+            p.card = drawCard();
+        });
         io.emit('gameState', { players, turnIndex, log: "🚀 게임이 시작되었습니다! 마법사들의 대결이 펼쳐집니다." });
     });
 

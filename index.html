@@ -14,6 +14,12 @@
         .card { display: inline-block; width: 90px; height: 130px; margin: 10px; border-radius: 15px; line-height: 130px; font-size: 20px; font-weight: bold; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%); color: #333; box-shadow: 0 5px 15px rgba(0,0,0,0.3); border: 2px solid #fff; }
         .my-card { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: transparent; border: 2px dashed rgba(255,255,255,0.7); }
         #result-text { font-size: 22px; color: #ffeaa7; margin-top: 20px; min-height: 80px; white-space: pre-line; line-height: 1.5; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 10px; display: inline-block; min-width: 60%; }
+        #private-msg { font-size: 20px; color: #00cec9; margin-top: 15px; min-height: 30px; white-space: pre-line; text-shadow: 1px 1px 2px #000; font-weight: bold; }
+        
+        #discard-area { display: none; margin: 20px auto; padding: 15px; width: 85%; background: rgba(0,0,0,0.4); border-radius: 15px; border: 1px solid rgba(255,255,255,0.2); }
+        #discard-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; }
+        .discard-badge { background: #e74c3c; padding: 8px 12px; border-radius: 8px; font-size: 16px; border: 1px solid rgba(255,255,255,0.5); box-shadow: 0 2px 5px rgba(0,0,0,0.3); font-weight: bold; }
+
         .hp-text { color: #ff7675; font-size: 16px; margin-right: 10px; text-shadow: 1px 1px 2px #000; }
         .stone-text { color: #a29bfe; font-size: 16px; text-shadow: 1px 1px 2px #000; }
         .btn { padding: 15px 30px; font-size: 18px; cursor: pointer; margin: 10px; border-radius: 30px; border: none; font-family: 'Jua', sans-serif; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.2s ease; }
@@ -58,6 +64,11 @@
     <div id="game-area">
         <div id="opponents-area"></div>
         
+        <div id="discard-area">
+            <h3 style="color: #bdc3c7; margin: 0 0 10px 0;">📜 사용된 카드 목록 (고스트는 바로 덱으로 숨습니다)</h3>
+            <div id="discard-list">아직 사용된 카드가 없습니다.</div>
+        </div>
+
         <div id="my-board" class="board">
             <h3 id="my-title">나의 마법 돌</h3>
             <div id="my-card" class="card my-card">?</div>
@@ -88,6 +99,7 @@
 
         <br>
         <div id="result-text">서버와 연결 중...</div>
+        <div id="private-msg"></div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -103,7 +115,6 @@
         document.getElementById('join-btn').addEventListener('click', () => {
             let nickname = document.getElementById('nickname-input').value.trim();
             if (!nickname) return alert("닉네임을 입력해주세요!");
-            
             socket.emit('joinGame', nickname); 
         });
 
@@ -124,12 +135,19 @@
             document.getElementById('lobby-players').innerHTML = players.map(p => `🧙‍♂️ ${p.name} (대기중)`).join('<br>');
         });
 
+        socket.on('gameLog', (msg) => {
+            let logArea = document.getElementById('result-text');
+            logArea.innerHTML = msg + "<br><br>" + logArea.innerHTML;
+        });
+
         document.getElementById('start-btn').addEventListener('click', () => {
             socket.emit('startGame');
         });
 
         socket.on('gameState', (data) => {
             if (!hasJoined) return; 
+
+            document.getElementById('private-msg').innerHTML = "";
 
             document.getElementById('lobby-area').style.display = "none";
             document.getElementById('game-area').style.display = "block";
@@ -179,6 +197,15 @@
                 }
             });
 
+            document.getElementById('discard-area').style.display = "block";
+            let discardHtml = "";
+            if (data.discardPile && data.discardPile.length > 0) {
+                discardHtml = data.discardPile.map(c => `<div class="discard-badge">${cardNames[c]}</div>`).join('');
+            } else {
+                discardHtml = "아직 사용된 카드가 없습니다.";
+            }
+            document.getElementById('discard-list').innerHTML = discardHtml;
+
             if (data.pendingAttack === myId && !data.isOver) {
                 document.getElementById('action-area').style.display = "none";
                 document.getElementById('defense-area').style.display = "block";
@@ -189,6 +216,10 @@
             
             document.getElementById('duel-area').style.display = "none";
             document.getElementById('guess-area').style.display = "none";
+        });
+
+        socket.on('privateLog', (msg) => {
+            document.getElementById('private-msg').innerHTML = msg;
         });
 
         document.getElementById('duel-btn').addEventListener('click', () => {

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>아브라카 후 온라인</title>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+    <style>
+        body { background: radial-gradient(circle at top right, #2b1055 0%, #7597de 100%); color: white; text-align: center; font-family: 'Jua', sans-serif; margin: 0; padding: 20px; min-height: 100vh; }
+        h1 { font-size: 3em; text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.5); margin-bottom: 10px; color: #f1c40f; }
+        .board { margin: 15px auto; padding: 20px; width: 85%; border-radius: 20px; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); }
+        #opponents-area { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; margin-bottom: 20px; }
+        .opponent-board { border-radius: 15px; width: 140px; padding: 15px; background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2); transition: all 0.3s ease; }
+        .active-turn { border: 2px solid #f1c40f !important; box-shadow: 0 0 20px rgba(241, 196, 15, 0.6) !important; transform: scale(1.05); }
+        .card { display: inline-block; width: 90px; height: 130px; margin: 10px; border-radius: 15px; line-height: 130px; font-size: 20px; font-weight: bold; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%); color: #333; box-shadow: 0 5px 15px rgba(0,0,0,0.3); border: 2px solid #fff; }
+        .my-card { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: transparent; border: 2px dashed rgba(255,255,255,0.7); }
+        #result-text { font-size: 22px; color: #ffeaa7; margin-top: 20px; min-height: 80px; white-space: pre-line; line-height: 1.5; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 10px; display: inline-block; min-width: 60%; }
+        .hp-text { color: #ff7675; font-size: 16px; margin-right: 10px; text-shadow: 1px 1px 2px #000; }
+        .stone-text { color: #a29bfe; font-size: 16px; text-shadow: 1px 1px 2px #000; }
+        .btn { padding: 15px 30px; font-size: 18px; cursor: pointer; margin: 10px; border-radius: 30px; border: none; font-family: 'Jua', sans-serif; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.2s ease; }
+        .btn:hover { transform: scale(1.05); filter: brightness(1.1); }
+        .btn:active { transform: scale(0.95); }
+        #start-btn { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); font-size: 24px; padding: 20px 40px; }
+        #duel-btn { background: linear-gradient(135deg, #f12711 0%, #f5af19 100%); }
+        #guess-btn { background: linear-gradient(135deg, #0575E6 0%, #021B79 100%); }
+        #confirm-duel-btn, #confirm-guess-btn { background: linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%); }
+        select, input { padding: 12px; font-size: 18px; margin: 5px; border-radius: 10px; border: 2px solid #fff; background: rgba(255, 255, 255, 0.9); font-family: 'Jua', sans-serif; color: #333; outline: none; }
+        #game-area, #action-area, #duel-area, #guess-area { display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>✨ 아브라카 후 온라인 ✨</h1>
+
+    <div id="lobby-area">
+        <h2>대기실 <span id="player-count">(0명 접속)</span></h2>
+        <div id="lobby-players" style="font-size:20px; margin-bottom:20px;"></div>
+        <button id="start-btn" class="btn">🚀 게임 시작! (모두 모이면 누르세요)</button>
+    </div>
+
+    <div id="game-area">
+        <div id="opponents-area"></div>
+        
+        <div id="my-board" class="board">
+            <h3 id="my-title">나의 마법 돌</h3>
+            <div id="my-card" class="card my-card">?</div>
+        </div>
+
+        <div id="action-area">
+            <button id="duel-btn" class="btn">⚔️ 상대방과 결투</button>
+            <button id="guess-btn" class="btn">🤔 내 정체 추리</button>
+        </div>
+
+        <div id="duel-area">
+            <select id="target-player"></select>
+            <button id="confirm-duel-btn" class="btn">결투 실행!</button>
+        </div>
+
+        <div id="guess-area">
+            <input type="number" id="guess-input" min="1" max="6" placeholder="1~6">
+            <button id="confirm-guess-btn" class="btn">정답 확인!</button>
+        </div>
+
+        <br>
+        <div id="result-text">서버와 연결 중...</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const cardNames = {
+            6: '👻고스트(6)', 5: '🧛뱀파이어(5)', 4: '⚔️갑옷기사(4)', 
+            3: '🎩집사(3)', 2: '🍳요리사(2)', 1: '🧹청소부(1)'
+        };
+
+        socket.on('lobbyUpdate', (players) => {
+            document.getElementById('player-count').innerText = `(${players.length}명 접속)`;
+            document.getElementById('lobby-players').innerHTML = players.map(p => `🧙‍♂️ ${p.name} (대기중)`).join('<br>');
+        });
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            socket.emit('startGame');
+        });
+
+        socket.on('gameState', (data) => {
+            document.getElementById('lobby-area').style.display = "none";
+            document.getElementById('game-area').style.display = "block";
+            
+            let myId = socket.id;
+            let players = data.players;
+            let currentTurnPlayer = players[data.turnIndex];
+            let isMyTurn = (currentTurnPlayer.id === myId) && !data.isOver;
+
+            let myData = players.find(p => p.id === myId);
+
+            document.getElementById('result-text').innerHTML = data.log.replace(/\n/g, '<br>');
+
+            if (myData.hp > 0) {
+                document.getElementById('my-board').style.display = "block";
+                document.getElementById('my-title').innerHTML = `${myData.name} <span class="hp-text">❤️ ${myData.hp}</span> <span class="stone-text">💎 ${myData.stone}</span>`;
+            } else {
+                document.getElementById('my-board').style.display = "none";
+            }
+            if (isMyTurn) document.getElementById('my-board').classList.add('active-turn');
+            else document.getElementById('my-board').classList.remove('active-turn');
+
+            const opponentsArea = document.getElementById('opponents-area');
+            const targetPlayerSelect = document.getElementById('target-player');
+            opponentsArea.innerHTML = "";
+            targetPlayerSelect.innerHTML = "";
+
+            players.forEach(p => {
+                if (p.id !== myId && p.hp > 0) {
+                    let oppDiv = document.createElement('div');
+                    oppDiv.className = `opponent-board ${currentTurnPlayer.id === p.id && !data.isOver ? 'active-turn' : ''}`;
+                    oppDiv.innerHTML = `
+                        <div style="margin-bottom: 5px;"><b>${p.name}</b></div>
+                        <span class="hp-text">❤️ ${p.hp}</span> | <span class="stone-text">💎 ${p.stone}</span><br>
+                        <div class="card" style="width:70px; height:100px; line-height:100px; font-size:16px;">${cardNames[p.card]}</div>
+                    `;
+                    opponentsArea.appendChild(oppDiv);
+
+                    let option = document.createElement('option');
+                    option.value = p.id;
+                    option.text = p.name;
+                    targetPlayerSelect.appendChild(option);
+                }
+            });
+
+            document.getElementById('action-area').style.display = isMyTurn ? "block" : "none";
+            document.getElementById('duel-area').style.display = "none";
+            document.getElementById('guess-area').style.display = "none";
+        });
+
+        document.getElementById('duel-btn').addEventListener('click', () => {
+            document.getElementById('action-area').style.display = "none"; 
+            document.getElementById('duel-area').style.display = "block";
+        });
+        document.getElementById('guess-btn').addEventListener('click', () => {
+            document.getElementById('action-area').style.display = "none"; 
+            document.getElementById('guess-area').style.display = "block";
+        });
+
+        document.getElementById('confirm-duel-btn').addEventListener('click', () => {
+            let targetId = document.getElementById('target-player').value;
+            if(!targetId) return alert("결투할 상대가 없습니다.");
+            socket.emit('actionDuel', targetId);
+        });
+
+        document.getElementById('confirm-guess-btn').addEventListener('click', () => {
+            let guess = parseInt(document.getElementById('guess-input').value);
+            if(!guess) return alert("숫자를 입력하세요.");
+            socket.emit('actionGuess', guess);
+        });
+    </script>
+</body>
+</html>

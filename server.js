@@ -9,6 +9,7 @@ let players = [];
 let deck = [];
 let turnIndex = 0;
 let gameStarted = false;
+let pendingAttack = null; // 🌟 결투 대기 상태를 저장하는 변수
 
 const cardNames = {
     6: '👻고스트(6)', 5: '🧛뱀파이어(5)', 4: '⚔️갑옷기사(4)', 
@@ -76,37 +77,83 @@ io.on('connection', (socket) => {
         io.emit('gameState', { players, turnIndex, log: "🚀 게임이 시작되었습니다! 마법사들의 대결이 펼쳐집니다." });
     });
 
-    socket.on('actionDuel', (targetId) => {
+    // 🌟 수정: 결투를 '신청'만 하고 방어자의 응답을 기다립니다.
+    socket.on('actionDuelRequest', (targetId) => {
         let me = players.find(p => p.id === socket.id);
         let target = players.find(p => p.id === targetId);
         
-        let aNum = me.card;
-        let dNum = target.card;
-        let msg = `⚔️ <b>[${me.name}]</b>가 <b>[${target.name}]</b>에게 결투를 신청했습니다!\n공격(${cardNames[aNum]}) VS 수비(${cardNames[dNum]})\n\n`;
+        pendingAttack = { attacker: me, defender: target };
 
-        if (aNum === 1 && dNum === 6) {
-            msg += "🎉 🧹청소부가 👻고스트를 잡았습니다!"; target.hp--; me.stone++;
-        } else if (aNum === 6 && dNum === 1) {
-            msg += "💀 👻고스트가 🧹청소부에게 쫓겨납니다."; me.hp--; target.stone++;
-        } else if (aNum === 2 && dNum === 5) {
-            msg += "🎉 🍳요리사가 🧛뱀파이어를 이겼습니다!"; target.hp--; me.stone++;
-        } else if (aNum === 5 && dNum === 2) {
-            msg += "💀 🧛뱀파이어가 🍳요리사에게 당했습니다."; me.hp--; target.stone++;
-        } else if (aNum > dNum) {
-            msg += `🎉 공격 성공! 방어자의 체력이 1 깎입니다.`; target.hp--;
-        } else if (aNum < dNum) {
-            msg += `💀 공격 실패... 역공을 당해 공격자의 체력이 1 깎입니다.`; me.hp--;
-        } else {
-            msg += "🤝 챙챙! 힘이 같아 아무 일도 일어나지 않습니다.";
+        io.emit('gameState', { 
+            players, 
+            turnIndex, 
+            log: `⚔️ <b>[${me.name}]</b>님이 <b>[${target.name}]</b>님에게 결투를 신청했습니다!\n방어자의 응답을 기다리는 중...`, 
+            isOver: false,
+            pendingAttack: pendingAttack.defender.id // 누가 공격받고 있는지 클라이언트에 알림
+        });
+    });
+
+    // 🌟 추가: 방어자가 수락(duel) 혹은 반격(guess)을 선택했을 때 처리
+    socket.on('respondToAttack', (data) => {
+        if (!pendingAttack || pendingAttack.defender.id !== socket.id) return;
+
+        let attacker = pendingAttack.attacker;
+        let defender = pendingAttack.defender;
+        let msg = "";
+
+        if (data.type === 'duel') {
+            // 방어자가 결투를 수락한 경우
+            let aNum = attacker.card;
+            let dNum = defender.card;
+            msg = `⚔️ <b>[${defender.name}]</b>님이 결투를 수락했습니다!\n공격(${cardNames[aNum]}) VS 수비(${cardNames[dNum]})\n\n`;
+
+            if (aNum === 1 && dNum === 6) {
+                msg += "🎉 🧹청소부가 👻고스트를 잡았습니다!"; defender.hp--; attacker.stone++;
+            } else if (aNum === 6 && dNum === 1) {
+                msg += "💀 👻고스트가 🧹청소부에게 쫓겨납니다."; attacker.hp--; defender.stone++;
+            } else if (aNum === 2 && dNum === 5) {
+                msg += "🎉 🍳요리사가 🧛뱀파이어를 이겼습니다!"; defender.hp--; attacker.stone++;
+            } else if (aNum === 5 && dNum === 2) {
+                msg += "💀 🧛뱀파이어가 🍳요리사에게 당했습니다."; attacker.hp--; defender.stone++;
+            } else if (aNum > dNum) {
+                msg += `🎉 공격 성공! 방어자의 체력이 1 깎입니다.`; defender.hp--;
+            } else if (aNum < dNum) {
+                msg += `💀 공격 실패... 역공을 당해 공격자의 체력이 1 깎입니다.`; attacker.hp--;
+            } else {
+                msg += "🤝 챙챙! 힘이 같아 아무 일도 일어나지 않습니다.";
+            }
+
+            attacker.card = drawCard(); // 공격자 카드 교체
+        } else if (data.type === 'guess') {
+            // 방어자가 추리로 반격한 경우
+            let pNum = defender.card;
+            let guessedNumber = data.guessNum;
+            msg = `🤔 <b>[${defender.name}]</b>님이 결투를 피하고 정체 추리로 반격합니다!\n"내 카드는 분명 [${guessedNumber}]일 것이다!"\n\n`;
+
+            if (guessedNumber === pNum) {
+                msg += `🎉 추리 성공! 진짜 카드는 <b>[${cardNames[pNum]}]</b>였습니다!\n결투는 무효화되고 ✨<b>[마법 효과 발동]</b>✨\n`;
+                switch(pNum) {
+                    case 6: msg += "👻고스트: 나머지 전원 즉시 탈락!"; players.forEach(p => { if (p.id !== defender.id) p.hp = 0; }); break;
+                    case 5: msg += "🧛뱀파이어: 신비한 돌 +2개 획득!"; defender.stone += 2; break;
+                    case 4: msg += "⚔️갑옷기사: 나머지 전원에게 2 피해!"; players.forEach(p => { if (p.id !== defender.id && p.hp > 0) p.hp -= 2; }); break;
+                    case 3: msg += "🎩집사: 자신 체력 1 회복, 나머지 전원 1 피해!"; defender.hp++; players.forEach(p => { if (p.id !== defender.id && p.hp > 0) p.hp -= 1; }); break;
+                    case 2: msg += "🍳요리사: 신비한 돌 +1개 획득!"; defender.stone++; break;
+                    case 1: msg += `🧹청소부: 카드 더미 훔쳐보기를 사용했습니다.`; break; 
+                }
+            } else {
+                msg += `💀 펑! 추리 실패...\n진짜 카드는 <b>[${cardNames[pNum]}]</b>였습니다. 페널티로 방어자의 체력이 1 깎입니다.`;
+                defender.hp--;
+            }
+            defender.card = drawCard(); // 방어자 카드 교체
         }
 
-        me.card = drawCard(); 
-        
+        pendingAttack = null; // 대기 상태 해제
         let state = checkGameState(msg);
         if (!state.isOver) nextTurn();
         io.emit('gameState', { players, turnIndex, log: state.msg, isOver: state.isOver });
     });
 
+    // 일반 내 턴일 때의 추리
     socket.on('actionGuess', (guessedNumber) => {
         let me = players.find(p => p.id === socket.id);
         let pNum = me.card;

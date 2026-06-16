@@ -148,7 +148,6 @@
             if (!hasJoined) return; 
 
             document.getElementById('private-msg').innerHTML = "";
-
             document.getElementById('lobby-area').style.display = "none";
             document.getElementById('game-area').style.display = "block";
             
@@ -156,7 +155,8 @@
             let players = data.players;
             let currentTurnPlayer = players[data.turnIndex];
             
-            let isMyTurn = (currentTurnPlayer.id === myId) && !data.isOver && !data.pendingAttack;
+            // 🌟 수정: 클라이언트에서 발생하던 뻗음 현상(TypeError) 가드 적용
+            let isMyTurn = currentTurnPlayer && (currentTurnPlayer.id === myId) && !data.isOver && !data.pendingAttack;
 
             let myData = players.find(p => p.id === myId);
 
@@ -180,7 +180,10 @@
             players.forEach(p => {
                 if (p.id !== myId && p.hp > 0) {
                     let oppDiv = document.createElement('div');
-                    oppDiv.className = `opponent-board ${currentTurnPlayer.id === p.id && !data.isOver ? 'active-turn' : ''}`;
+                    // 🌟 가드 적용
+                    let isActiveOpponent = currentTurnPlayer && currentTurnPlayer.id === p.id && !data.isOver;
+                    oppDiv.className = `opponent-board ${isActiveOpponent ? 'active-turn' : ''}`;
+                    
                     if (data.pendingAttack === p.id) oppDiv.style.border = "3px dashed #e74c3c";
                     
                     oppDiv.innerHTML = `
@@ -197,21 +200,14 @@
                 }
             });
 
-            // 🌟 수정: 사용된 카드를 개수별로 묶어서 표시
             document.getElementById('discard-area').style.display = "block";
             let discardHtml = "";
             if (data.discardPile && data.discardPile.length > 0) {
                 let cardCounts = {};
-                
-                // 묘지의 카드들을 순회하며 개수를 셉니다
                 data.discardPile.forEach(num => {
                     cardCounts[num] = (cardCounts[num] || 0) + 1;
                 });
-                
-                // 카드 번호(키)를 배열로 추출하고 높은 숫자부터 정렬
                 let sortedKeys = Object.keys(cardCounts).sort((a, b) => b - a);
-                
-                // 정리된 목록을 HTML로 생성 (예: 🧹청소부(1) x 3)
                 discardHtml = sortedKeys.map(num => `<div class="discard-badge">${cardNames[num]} ✖ ${cardCounts[num]}</div>`).join('');
             } else {
                 discardHtml = "아직 사용된 카드가 없습니다.";

@@ -14,8 +14,6 @@
         .card { display: inline-block; width: 90px; height: 130px; margin: 10px; border-radius: 15px; line-height: 130px; font-size: 20px; font-weight: bold; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%); color: #333; box-shadow: 0 5px 15px rgba(0,0,0,0.3); border: 2px solid #fff; }
         .my-card { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: transparent; border: 2px dashed rgba(255,255,255,0.7); }
         #result-text { font-size: 22px; color: #ffeaa7; margin-top: 20px; min-height: 80px; white-space: pre-line; line-height: 1.5; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 10px; display: inline-block; min-width: 60%; }
-        
-        /* 🌟 비밀 메시지를 강조하는 스타일 */
         #private-msg { font-size: 22px; color: #00cec9; margin-top: 15px; min-height: 30px; white-space: pre-line; text-shadow: 1px 1px 3px #000; font-weight: bold; background: rgba(0, 0, 0, 0.5); padding: 10px; border-radius: 10px; display: inline-block; }
         
         #discard-area { display: none; margin: 20px auto; padding: 15px; width: 85%; background: rgba(0,0,0,0.4); border-radius: 15px; border: 1px solid rgba(255,255,255,0.2); }
@@ -143,7 +141,6 @@
         });
 
         document.getElementById('start-btn').addEventListener('click', () => {
-            // 🌟 게임 시작 시 내 이전 게임의 비밀 메시지를 청소합니다.
             document.getElementById('private-msg').innerHTML = "";
             document.getElementById('private-msg').style.display = "none";
             socket.emit('startGame');
@@ -151,9 +148,6 @@
 
         socket.on('gameState', (data) => {
             if (!hasJoined) return; 
-
-            // 🌟 이전 코드에 있던 "document.getElementById('private-msg').innerHTML = '';" 코드를 과감히 삭제했습니다! 
-            // 이제 상태가 업데이트되어도 내가 확인한 비밀 카드는 지워지지 않습니다.
 
             document.getElementById('lobby-area').style.display = "none";
             document.getElementById('game-area').style.display = "block";
@@ -171,8 +165,12 @@
             if (myData && myData.hp > 0) {
                 document.getElementById('my-board').style.display = "block";
                 document.getElementById('my-title').innerHTML = `${myData.name} <span class="hp-text">❤️ ${myData.hp}</span> <span class="stone-text">💎 ${myData.stone}</span>`;
-            } else {
+            } else if (myData && myData.hp <= 0) {
                 document.getElementById('my-board').style.display = "none";
+                let specLog = document.getElementById('result-text');
+                if (!specLog.innerHTML.includes("👻")) {
+                    specLog.innerHTML = "👁️ 현재 관전 모드(유령)입니다. 다른 플레이어들의 전투를 지켜보세요!<br><br>" + specLog.innerHTML;
+                }
             }
             
             if (isMyTurn || data.pendingAttack === myId) document.getElementById('my-board').classList.add('active-turn');
@@ -219,53 +217,55 @@
             }
             document.getElementById('discard-list').innerHTML = discardHtml;
 
-            if (data.pendingAttack === myId && !data.isOver) {
-                document.getElementById('action-area').style.display = "none";
-                document.getElementById('defense-area').style.display = "block";
+            if (myData && myData.hp > 0) {
+                if (data.pendingAttack === myId && !data.isOver) {
+                    document.getElementById('action-area').style.display = "none";
+                    document.getElementById('defense-area').style.display = "block";
+                } else {
+                    document.getElementById('defense-area').style.display = "none";
+                    document.getElementById('action-area').style.display = isMyTurn ? "block" : "none";
+                }
             } else {
+                document.getElementById('action-area').style.display = "none";
                 document.getElementById('defense-area').style.display = "none";
-                document.getElementById('action-area').style.display = isMyTurn ? "block" : "none";
             }
             
             document.getElementById('duel-area').style.display = "none";
             document.getElementById('guess-area').style.display = "none";
         });
 
-        // 🌟 서버로부터 비밀 메시지를 받으면 화면에 띄워줍니다.
         socket.on('privateLog', (msg) => {
             let privateMsgDiv = document.getElementById('private-msg');
             privateMsgDiv.innerHTML = msg;
-            privateMsgDiv.style.display = "inline-block"; // 메시지가 있으면 보여줍니다.
+            privateMsgDiv.style.display = "inline-block"; 
         });
 
-        // 🌟 사용자가 능동적으로 다음 액션(버튼 클릭)을 취할 때만 비밀 메시지를 청소합니다.
         document.getElementById('confirm-duel-btn').addEventListener('click', () => {
             let targetId = document.getElementById('target-player').value;
             if(!targetId) return alert("결투할 상대가 없습니다.");
-            document.getElementById('private-msg').style.display = "none"; // 메시지 청소
+            document.getElementById('private-msg').style.display = "none"; 
             socket.emit('actionDuelRequest', targetId); 
         });
 
         document.getElementById('confirm-guess-btn').addEventListener('click', () => {
             let guess = parseInt(document.getElementById('guess-input').value);
             if(!guess) return alert("숫자를 입력하세요.");
-            document.getElementById('private-msg').style.display = "none"; // 메시지 청소
+            document.getElementById('private-msg').style.display = "none"; 
             socket.emit('actionGuess', guess);
         });
 
         document.getElementById('accept-duel-btn').addEventListener('click', () => {
-            document.getElementById('private-msg').style.display = "none"; // 메시지 청소
+            document.getElementById('private-msg').style.display = "none"; 
             socket.emit('respondToAttack', { type: 'duel' });
         });
         
         document.getElementById('defense-guess-btn').addEventListener('click', () => {
             let guess = parseInt(document.getElementById('defense-guess-input').value);
             if(!guess) return alert("반격할 숫자를 입력하세요.");
-            document.getElementById('private-msg').style.display = "none"; // 메시지 청소
+            document.getElementById('private-msg').style.display = "none"; 
             socket.emit('respondToAttack', { type: 'guess', guessNum: guess });
         });
 
-        // 단순 메뉴 이동 버튼들
         document.getElementById('duel-btn').addEventListener('click', () => {
             document.getElementById('action-area').style.display = "none"; 
             document.getElementById('duel-area').style.display = "block";

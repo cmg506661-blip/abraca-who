@@ -17,30 +17,41 @@ const cardNames = {
     3: '🎩집사(3)', 2: '🍳요리사(2)', 1: '🧹청소부(1)'
 };
 
+// 🌟 추가: 완벽한 무작위성을 보장하는 피셔-예이츠 셔플 함수
+function shuffle(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+}
+
+// 최초 21장 덱 구성
 function initDeck() {
     deck = [6, 5,5, 4,4,4, 3,3,3,3, 2,2,2,2,2, 1,1,1,1,1,1];
-    deck.sort(() => Math.random() - 0.5);
+    shuffle(deck); // 🌟 수학적으로 완벽하게 셔플
     discardPile = [];
 }
 
+// 카드 버리기 룰 (고스트는 덱으로 환원)
 function discardCard(cardNum) {
     if (cardNum === 0) return;
     
     if (cardNum === 6) {
         deck.push(6); 
-        deck.sort(() => Math.random() - 0.5); 
+        shuffle(deck); // 🌟 고스트가 들어가면 완벽하게 다시 셔플
         io.emit('gameLog', "👻 고스트가 모습을 드러낸 후 다시 어둠 속(더미)으로 숨어들었습니다!");
     } else {
         discardPile.push(cardNum); 
     }
 }
 
+// 카드 뽑기 룰 (덱이 비면 묘지를 섞어 새 덱으로 만듦)
 function drawCard() {
     if (deck.length === 0) {
         if (discardPile.length > 0) {
             deck = [...discardPile];
             discardPile = [];
-            deck.sort(() => Math.random() - 0.5);
+            shuffle(deck); // 🌟 사용된 카드를 합칠 때도 완벽하게 셔플
             io.emit('gameLog', "🔄 카드 더미가 다 떨어져, 사용된 카드를 다시 섞습니다.");
         } else {
             initDeck(); 
@@ -102,10 +113,17 @@ io.on('connection', (socket) => {
         socket.emit('joinSuccess');
 
         if (gameStarted) {
-            socket.emit('gameState', { players, turnIndex, log: "진행 중인 게임에 관전자로 참가했습니다.\n잠시 후 다음 라운드가 시작됩니다.", isOver: false, pendingAttack: pendingAttack ? pendingAttack.defender.id : null, discardPile });
+            io.emit('gameState', { 
+                players, 
+                turnIndex, 
+                log: `👁️ 관전자 <b>[${finalName}]</b>님이 입장했습니다.`, 
+                isOver: false, 
+                pendingAttack: pendingAttack ? pendingAttack.defender.id : null, 
+                discardPile 
+            });
+        } else {
+            io.emit('lobbyUpdate', players);
         }
-        
-        io.emit('lobbyUpdate', players);
     });
 
     socket.on('startGame', () => {
@@ -182,7 +200,6 @@ io.on('connection', (socket) => {
                 msg += "🤝 챙챙! 힘이 같아 아무 일도 일어나지 않습니다.";
             }
 
-            // 🌟 수정: 공격자와 방어자 모두 카드를 버리고 새로 뽑습니다.
             discardCard(actualAttacker.card); 
             if (actualAttacker.hp > 0) actualAttacker.card = drawCard(); 
             else actualAttacker.card = 0;
@@ -298,16 +315,28 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         let index = players.findIndex(p => p.id === socket.id);
+        let disconnectedPlayer = players[index];
         if (index !== -1) {
             players.splice(index, 1);
             if (turnIndex >= players.length) turnIndex = 0;
         }
 
-        if (gameStarted && players.length < 2) {
+        let aliveCount = players.filter(p => p.hp > 0).length;
+        if (gameStarted && aliveCount < 2) {
             gameStarted = false;
-            io.emit('gameLog', "🛑 다른 플레이어들이 모두 나가서 게임이 강제 종료되었습니다.");
+            io.emit('gameLog', "🛑 다른 플레이어들이 탈락하거나 퇴장하여 게임이 강제 종료되었습니다.");
             setTimeout(() => { io.emit('lobbyUpdate', players); }, 3000);
-        } else if (!gameStarted) {
+        } else if (gameStarted) {
+            let leftName = disconnectedPlayer ? disconnectedPlayer.name : "누군가";
+            io.emit('gameState', { 
+                players, 
+                turnIndex, 
+                log: `⚠️ <b>[${leftName}]</b>님이 게임을 도중에 이탈했습니다.`, 
+                isOver: false, 
+                pendingAttack: null, 
+                discardPile 
+            });
+        } else {
             io.emit('lobbyUpdate', players);
         }
     });

@@ -91,11 +91,10 @@ io.on('connection', (socket) => {
     socket.on('joinGame', (nickname) => {
         let finalName = nickname || `마법사 ${players.length + 1}`;
 
-        // 🌟 수정: 게임 중이거나 결과창 대기 시간일 때 거절하지 않고 관전자(HP 0)로 입장시킴
         let newPlayer = {
             id: socket.id,
             name: finalName,
-            hp: gameStarted ? 0 : 5, // 게임 중이면 관전자로 시작
+            hp: gameStarted ? 0 : 5, 
             stone: 0, 
             card: 0
         };
@@ -127,7 +126,6 @@ io.on('connection', (socket) => {
         let me = players.find(p => p.id === socket.id);
         let target = players.find(p => p.id === targetId);
         
-        // 🌟 가드: 서버 뻗음(502) 완벽 차단
         if (!me || !target || me.hp <= 0) return; 
         
         pendingAttack = { attacker: me, defender: target };
@@ -148,7 +146,6 @@ io.on('connection', (socket) => {
         let attacker = pendingAttack.attacker;
         let defender = pendingAttack.defender;
         
-        // 🌟 가드: 결투 중 누군가 새로고침해서 정보가 꼬였을 때 뻗지 않도록 차단
         let actualAttacker = players.find(p => p.id === attacker.id);
         let actualDefender = players.find(p => p.id === defender.id);
         if (!actualAttacker || !actualDefender) {
@@ -185,8 +182,15 @@ io.on('connection', (socket) => {
                 msg += "🤝 챙챙! 힘이 같아 아무 일도 일어나지 않습니다.";
             }
 
+            // 🌟 수정: 공격자와 방어자 모두 카드를 버리고 새로 뽑습니다.
             discardCard(actualAttacker.card); 
-            actualAttacker.card = drawCard(); 
+            if (actualAttacker.hp > 0) actualAttacker.card = drawCard(); 
+            else actualAttacker.card = 0;
+
+            discardCard(actualDefender.card);
+            if (actualDefender.hp > 0) actualDefender.card = drawCard();
+            else actualDefender.card = 0;
+
         } else if (data.type === 'guess') {
             let pNum = actualDefender.card;
             let guessedNumber = data.guessNum;
@@ -214,7 +218,8 @@ io.on('connection', (socket) => {
                 actualDefender.hp--;
             }
             discardCard(actualDefender.card); 
-            actualDefender.card = drawCard(); 
+            if (actualDefender.hp > 0) actualDefender.card = drawCard(); 
+            else actualDefender.card = 0;
         }
 
         cleanUpDeadPlayers();
@@ -240,7 +245,7 @@ io.on('connection', (socket) => {
 
     socket.on('actionGuess', (guessedNumber) => {
         let me = players.find(p => p.id === socket.id);
-        if (!me) return; // 🌟 가드 적용
+        if (!me) return; 
 
         let pNum = me.card;
         let msg = `🤔 <b>[${me.name}]</b>의 추리:\n"내 카드는 분명 [${guessedNumber}]일 것이다!"\n\n`;
@@ -268,7 +273,8 @@ io.on('connection', (socket) => {
         }
 
         discardCard(me.card); 
-        me.card = drawCard(); 
+        if (me.hp > 0) me.card = drawCard(); 
+        else me.card = 0;
         
         cleanUpDeadPlayers();
         let state = checkGameState(msg);
@@ -291,7 +297,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        // 🌟 수정: 누군가 나갔을 때 턴이 꼬여서 뻗는 현상 방지
         let index = players.findIndex(p => p.id === socket.id);
         if (index !== -1) {
             players.splice(index, 1);
